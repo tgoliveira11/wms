@@ -47,6 +47,14 @@ Location flags: Boulder `selfCheckIn=on, managerMark=on` · NRG `selfCheckIn=off
 pnpm test:curl               # runs scripts/run_curl_tests.sh against the running stack
 ```
 
+**Latest run (2026-07-02, `main`): ✅ 54 passed · 0 failed · 1 skipped** (55 assertions).
+
+The one skip (`T-BAL-03`) is the zero-balance rejection, which needs a driven-to-zero fixture.
+Coverage spans authentication, the two feature-flag semantics, the request lifecycle + history,
+manager approval with location scoping, per-location attendance, atomic OFF-balance decrement and
+reversal, worker balance visibility, idempotent third-party integration, the full RBAC
+negative-path matrix, defense-in-depth (services re-verify auth), and the OpenAPI/GraphQL surfaces.
+
 ## Core workflows to try
 1. **Worker OFF request → Manager approval → balance decrement.** Log in as *Tom* (WORKER), request an OFF day at Boulder. Log in as *Megan* (MANAGER), approve it — attendance flips to OFF and Tom's `offBalanceRemaining` drops by 1 (atomic decrement in org-service, ADR-0013).
 2. **Feature flags.** As *Lin* at NRG, a `CHECK_IN_OUT` request is rejected (`selfCheckIn=off`) but `OFF` is allowed (ADR-0011). As anyone, `markAttendance` at Wembley is rejected (`managerMark=off`).
