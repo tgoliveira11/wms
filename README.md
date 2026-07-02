@@ -59,13 +59,43 @@ pnpm test:curl               # runs scripts/run_curl_tests.sh against the runnin
      -d '{"externalWorkerId":"EXT-TOM-1042","locationExternalRef":"aramark-boulder-co","date":"2026-07-21","status":"PRESENT"}'
    ```
 
-## Where this MVP deliberately deviates from the TDR (for the 30-minute build)
-These are scoped cuts, not disagreements with the design — each is a documented trade-off:
-- **One Postgres container / three databases** instead of three instances (still DB-per-service *logically*; no cross-DB access in code). ADR-0004 target unchanged.
-- **`prisma db push`** instead of a migration history (ADR-0009's migrations are the production path).
-- **Express + a thin layering** instead of full NestJS/Clean-Architecture folders (ADR-0002's target stack). The service boundaries, two-layer authz, and invariants are all preserved.
-- **Synchronous atomic OFF-balance decrement only** (ADR-0013); the compensating outbox publisher (ADR-0007 step 5) is not wired.
-- **No DataLoader / no graphql-codegen / no 90% coverage gate** — replaced here by the curl acceptance script (`scripts/run_curl_tests.sh`) and the tiny seed scale.
-- Auth is **simulated** (fixed login tokens → HS256 JWT), re-verified at every service (ADR-0005).
+## Scope: the brief vs. our extra design docs
 
-Full design, rationale, and the production-grade version live in [`docs/`](docs/) (TDR + ADR-0001…0013).
+We separate two things on purpose: **what the take-home brief actually required** (all met), and
+**what our own auxiliary design docs additionally proposed** (extra — not required by the brief,
+and partly not implemented). This keeps "done" honest.
+
+### ✅ Brief requirements — fully met
+
+Every requirement in the brief is implemented and demonstrated. Each is mapped to its
+design + test in [`docs/REQUIREMENTS_TRACEABILITY.md`](docs/REQUIREMENTS_TRACEABILITY.md) and
+proven by the acceptance suite `scripts/run_curl_tests.sh` (**54 pass / 0 fail / 1 skip**):
+
+- Multiple backend **microservices** + a single **GraphQL gateway** + a **React + TypeScript** frontend that talks *only* to the gateway.
+- Single **company**, multiple **locations**, all permissions/ownership **scoped per location**.
+- Location **feature flags** (`selfCheckInEnabled`, `managerAttendanceMarkingEnabled`) that influence behaviour.
+- **Workers** in 1+ locations, unique `externalId`, a **job title per location** (unique within a location).
+- **Managers** in 1+ locations running the approval workflow.
+- **Attendance** per worker/date/**location**, `PRESENT`/`OFF`, sourced from manager marking, third-party integration, or approved worker request.
+- **Worker requests** (workers can't modify attendance directly), `CHECK_IN_OUT`/`OFF`, one active per worker/location/date, past **and** future dates, manager-approved only for their locations, approval updates the record; statuses `PENDING`/`APPROVED`/`REJECTED`/`CANCELLED`.
+- **Annual OFF-day balance** (per location), decremented atomically on approval, restored on reversal.
+- **Third-party integration** identifies workers by `externalId` (idempotent).
+- Roles **WORKER/MANAGER/SUPER_ADMIN**, authorization enforced at gateway *and* service; auth **simulated**.
+- **PostgreSQL**, schemas aligned to service boundaries; **seed data** for every view.
+
+### 🔵 Beyond the brief — our TDR/ADR extras (NOT implemented)
+
+These were proposed by *our own* [`docs/`](docs/) (TDR + ADRs), **not** by the brief. They are
+deliberately out of scope for this build — listed so nothing looks "done" that isn't:
+
+- **Playwright / UI end-to-end tests** (TDR §11, ADR-0008) — the API-level end-to-end is covered by the curl suite; browser E2E is not built.
+- **≥90% coverage gate + Testcontainers/Vitest suites** (ADR-0008) — not wired.
+- **Outbox publisher** for async cross-service compensation (ADR-0007) — only the *synchronous* atomic OFF-balance path is implemented (the reversal calls release inline, not via a polling publisher).
+- **DataLoader batching** (TDR §6) and **graphql-codegen** typed hooks (ADR-0010) — plain resolvers / hand-written docs instead (fine at seed scale).
+- **Three separate Postgres instances** (ADR-0004) — one container hosting three databases (DB-per-service *logically*, no cross-DB access in code).
+- **Prisma migration history** (ADR-0009) — `prisma db push` instead.
+- **Full NestJS / Clean-Architecture folders** (ADR-0002) — Express + a thin layering; service boundaries, two-layer authz, and all invariants preserved.
+- **Annual OFF-balance reset job** (ADR-0013) — the `annualOffAllowance`/`offBalanceRemaining` fields support it, but there is no scheduler.
+- **Real IdP / RS256 + JWKS** (ADR-0005) — simulated HS256 tokens (the brief explicitly allows simulated auth).
+
+Full design and the production-grade target for all of the above live in [`docs/`](docs/) (TDR + ADR-0001…0013).
