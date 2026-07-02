@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+.env.local
+*.tsbuildinfo
+.DS_Store
+web/src/graphql/generated/
+playwright-report/
+test-results/
+
+src/generated/
+
+# local runtime
+scratch/
+*.log
+
+# secrets & private challenge material (kept local, not published)
+.env
+docs/thiago.pdf

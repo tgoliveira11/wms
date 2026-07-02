@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Location {
+  id                              String           @id
+  companyId                       String
+  name                            String
+  address                         String?
+  externalRef                     String           @unique
+  selfCheckInEnabled              Boolean          @default(false)
+  managerAttendanceMarkingEnabled Boolean          @default(true)
+  createdAt                       DateTime         @default(now())
+  members                         LocationMember[]
+}
+
+model LocationMember {
+  id                  String   @id @default(uuid())
+  locationId          String
+  userId              String
+  role                String
+  jobTitle            String?
+  annualOffAllowance  Int      @default(12)
+  offBalanceRemaining Int      @default(12)
+  createdAt           DateTime @default(now())
+  location            Location @relation(fields: [locationId], references: [id])
+
+  @@unique([locationId, userId])
+  @@unique([locationId, jobTitle])
+}

@@ -1,0 +1,25 @@
+# Single Postgres container hosting three logical databases (one per service).
+# This is the MVP's deliberate deviation from ADR-0004's "one instance per service":
+# it preserves database-per-service *logically* (separate DBs, no cross-DB access in code)
+# while keeping a 30-minute local setup to a single `docker compose up`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wms-postgres
+    environment:
+      POSTGRES_USER: wms
+      POSTGRES_PASSWORD: wms
+      POSTGRES_DB: wms
+    ports:
+      - "5439:5432"
+    volumes:
+      - ./infra/init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql:ro
+      - wms_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wms"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  wms_pgdata:

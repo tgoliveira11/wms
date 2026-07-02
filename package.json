@@ -1,0 +1,18 @@
+{
+  "name": "wms",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.1.0",
+  "engines": { "node": ">=18.17" },
+  "scripts": {
+    "db:push": "pnpm -C services/identity db:push && pnpm -C services/org db:push && pnpm -C services/attendance db:push",
+    "seed": "pnpm -C services/identity seed && pnpm -C services/org seed && pnpm -C services/attendance seed",
+    "setup": "docker compose up -d && node -e \"setTimeout(()=>{},4000)\" && pnpm db:push && pnpm seed",
+    "dev": "concurrently -n identity,org,attend,gateway,web -c blue,green,magenta,cyan,yellow \"pnpm -C services/identity dev\" \"pnpm -C services/org dev\" \"pnpm -C services/attendance dev\" \"pnpm -C gateway dev\" \"pnpm -C web dev\"",
+    "test:curl": "bash scripts/run_curl_tests.sh"
+  },
+  "devDependencies": {
+    "concurrently": "8.2.2",
+    "typescript": "5.4.5"
+  }
+}

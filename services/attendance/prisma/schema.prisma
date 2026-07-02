@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AttendanceRecord {
+  id          String   @id @default(uuid())
+  workerId    String
+  locationId  String
+  date        String
+  status      String
+  source      String
+  sourceRefId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workerId, date])
+}
+
+model AttendanceRequest {
+  id          String    @id @default(uuid())
+  workerId    String
+  locationId  String
+  date        String
+  kind        String
+  status      String    @default("PENDING")
+  note        String?
+  requestedAt DateTime  @default(now())
+  decidedBy   String?
+  decidedAt   DateTime?
+}
+
+model IntegrationEvent {
+  id               String   @id @default(uuid())
+  externalWorkerId String
+  idempotencyKey   String   @unique
+  payload          String
+  processedAt      DateTime @default(now())
+}
