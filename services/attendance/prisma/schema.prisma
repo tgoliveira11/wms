@@ -19,7 +19,9 @@ model AttendanceRecord {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([workerId, date])
+  // Attendance is tracked per worker, per date, AND per location (brief). A
+  // multi-location worker can have a distinct status at each location on a day.
+  @@unique([workerId, locationId, date])
 }
 
 model AttendanceRequest {

@@ -201,6 +201,37 @@ curl -s -X POST "$ATTENDANCE_SVC/integrations/attendance" \
 R=$(gql "$WORKER_TOKEN" '{"query":"{ myAttendance(from:\"2026-07-21\", to:\"2026-07-21\"){ date } }"}')
 ok "T-INT-03" "duplicate idempotency key is a no-op (1 record)" "$(jq '[.data.myAttendance[]]|length' <<<"$R")" "1"
 
+########################################################## 7b. Gap fixes #1/#2/#4
+echo "7b. Per-location attendance (#1), worker balance (#2), reversal (#4)"
+LIN_USER_ID=$(gql "$LIN_TOKEN" '{"query":"{ me { id } }"}' | jq -r '.data.me.id // empty')
+
+# #1: Lin (worker at Boulder AND NRG) gets PRESENT at Boulder and OFF at NRG on the same
+# date -> two distinct records (impossible under the old (worker,date) key).
+mk --arg loc "$BOULDER_ID" --arg w "$LIN_USER_ID" '{query:"mutation($loc:ID!,$w:ID!,$d:Date!){ markAttendance(locationId:$loc,workerId:$w,date:$d,status:PRESENT){ id } }",variables:{loc:$loc,w:$w,d:"2026-09-01"}}'
+gql "$MANAGER_TOKEN" "$REQ" >/dev/null          # Megan manages Boulder
+mk --arg loc "$NRG_ID" --arg w "$LIN_USER_ID" '{query:"mutation($loc:ID!,$w:ID!,$d:Date!){ markAttendance(locationId:$loc,workerId:$w,date:$d,status:OFF){ id } }",variables:{loc:$loc,w:$w,d:"2026-09-01"}}'
+gql "$PRIYA_MANAGER_TOKEN" "$REQ" >/dev/null     # Priya manages NRG
+R=$(gql "$LIN_TOKEN" '{"query":"{ myAttendance(from:\"2026-09-01\",to:\"2026-09-01\"){ location { name } status } }"}')
+ok "T-LOC-01" "multi-location worker: 2 records same date (#1)" "$(jq '[.data.myAttendance[]]|length' <<<"$R")" "2"
+
+# #2: a worker can read its own OFF balance via me.memberships.
+R=$(gql "$WORKER_TOKEN" '{"query":"{ me { memberships { location { name } annualOffAllowance offBalanceRemaining } } }"}')
+ok "T-BAL-04" "worker reads own balance (me.memberships #2)" "$(jq '[.data.me.memberships[]|select(.location.name=="Aramark Boulder CO")]|length' <<<"$R")" "1"
+
+# #4: approve an OFF (balance -1), then the worker cancels the APPROVED request ->
+# balance restored and the attendance record removed (reversal, ADR-0013).
+balOf() { mk --arg id "$BOULDER_ID" '{query:"query($id:ID!){ location(id:$id){ members(role:WORKER){ user{id} offBalanceRemaining } } }",variables:{id:$id}}'; jqr "$(gql "$MANAGER_TOKEN" "$REQ")" ".data.location.members[]|select(.user.id==\"$1\")|.offBalanceRemaining"; }
+mk --arg loc "$BOULDER_ID" '{query:"mutation($loc:ID!,$d:Date!){ createAttendanceRequest(locationId:$loc,date:$d,kind:OFF){ id } }",variables:{loc:$loc,d:"2026-09-05"}}'
+REV_ID=$(jqr "$(gql "$JAMIE_TOKEN" "$REQ")" '.data.createAttendanceRequest.id')
+mk --arg id "$REV_ID" '{query:"mutation($id:ID!){ approveAttendanceRequest(id:$id){ status } }",variables:{id:$id}}'
+gql "$MANAGER_TOKEN" "$REQ" >/dev/null
+BAL_APPROVED=$(balOf "$JAMIE_USER_ID")
+mk --arg id "$REV_ID" '{query:"mutation($id:ID!){ cancelAttendanceRequest(id:$id){ status } }",variables:{id:$id}}'
+ok "T-REV-01" "worker cancels an APPROVED request" "$(jqr "$(gql "$JAMIE_TOKEN" "$REQ")" '.data.cancelAttendanceRequest.status')" "CANCELLED"
+R=$(gql "$JAMIE_TOKEN" '{"query":"{ myAttendance(from:\"2026-09-05\",to:\"2026-09-05\"){ date } }"}')
+ok "T-REV-02" "reversal removed the attendance record (#4)" "$(jq '[.data.myAttendance[]]|length' <<<"$R")" "0"
+ok "T-REV-03" "reversal restored OFF balance (#4)" "$(balOf "$JAMIE_USER_ID")" "$((BAL_APPROVED + 1))"
+
 ########################################################## 8. RBAC matrix
 echo "8. Role Authorization Matrix (negative-path sweep)"
 rbac() { ok "$1" "negative-path FORBIDDEN" "$(code "$(gql "$2" "$3")")" "FORBIDDEN"; }

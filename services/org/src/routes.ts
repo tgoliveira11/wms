@@ -96,6 +96,17 @@ router.get(
   }),
 );
 
+// GET /locations/by-ref/:ref — resolve a location by its externalRef (used by the
+// third-party integration flow). Two path segments, so it never collides with /:id.
+router.get(
+  '/locations/by-ref/:ref',
+  asyncH(async (req, res) => {
+    const location = await prisma.location.findUnique({ where: { externalRef: req.params.ref } });
+    if (!location) throw Errors.notFound('Location not found');
+    res.json(toLocation(location));
+  }),
+);
+
 // PATCH /locations/:id/flags — SUPER_ADMIN only.
 router.patch(
   '/locations/:id/flags',

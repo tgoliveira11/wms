@@ -18,10 +18,11 @@ resolves that contradiction.
 
 ## Decision
 Interpret the constraint as **"exactly one *active* (PENDING) attendance request per
-`(workerId, date)`"**, not one row for all time:
+`(workerId, locationId, date)`"** (scoped per location to match per-location attendance,
+invariant #2), not one row for all time:
 
-- Enforced by the partial unique index `UNIQUE (worker_id, date) WHERE status = 'PENDING'`
-  (TDR §5.3). Only one row in the `PENDING` state can exist for a given worker/date at any moment.
+- Enforced by the partial unique index `UNIQUE (worker_id, location_id, date) WHERE status = 'PENDING'`
+  (TDR §5.3). Only one row in the `PENDING` state can exist for a given worker/location/date at any moment.
 - Terminal-state rows (`CANCELLED`, `REJECTED`, `APPROVED`) are **immutable history** and are
   retained. They do not participate in the partial index, so they never block a new request.
 - Resubmitting for the same date after a `CANCELLED`/`REJECTED` outcome creates a **new row** with

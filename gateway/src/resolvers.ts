@@ -232,6 +232,11 @@ export const resolvers = {
       );
       return Promise.all(memberships.map((m) => loadLocation(ctx, m.locationId)));
     },
+    // Raw membership rows (carry locationId/userId/jobTitle/balance) — used by the
+    // worker view to show its own OFF balance per location.
+    memberships: async (parent: { id: string }, _a: unknown, ctx: GatewayContext) => {
+      return org.get(`/memberships${qs({ userId: parent.id })}`, ctx.token);
+    },
   },
 
   Location: {
@@ -263,9 +268,12 @@ export const resolvers = {
   },
 
   LocationMember: {
-    // org member carries userId -> hydrate via identity.
+    // org member carries userId/locationId -> hydrate via identity/org.
     user: async (parent: { userId: string }, _a: unknown, ctx: GatewayContext) => {
       return loadUser(ctx, parent.userId);
+    },
+    location: async (parent: { locationId: string }, _a: unknown, ctx: GatewayContext) => {
+      return loadLocation(ctx, parent.locationId);
     },
   },
 

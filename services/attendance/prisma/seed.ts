@@ -4,11 +4,13 @@ import { USERS, LOCATIONS } from '@wfms/shared';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Partial unique index enforcing "one PENDING request per (workerId,date)"
-  // (invariant #3, ADR-0012). Prisma can't express partial unique indexes in
-  // schema, so we create it here. Terminal-state rows do not participate.
+  // Partial unique index enforcing "one PENDING request per (workerId,locationId,date)"
+  // (invariant #3, ADR-0012), scoped per location to match per-location attendance.
+  // Prisma can't express partial unique indexes in schema, so we create it here.
+  // Terminal-state rows do not participate. Drop the old per-(worker,date) index if present.
+  await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS uq_pending_request`);
   await prisma.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_request ON "AttendanceRequest"("workerId","date") WHERE status = 'PENDING'`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_request ON "AttendanceRequest"("workerId","locationId","date") WHERE status = 'PENDING'`,
   );
 
   // Demo requests. Avoid date 2026-07-10 (reserved for curl tests).
@@ -60,9 +62,14 @@ async function main() {
   });
 
   await prisma.attendanceRecord.upsert({
-    where: { workerId_date: { workerId: USERS.jamie.id, date: '2026-06-20' } },
+    where: {
+      workerId_locationId_date: {
+        workerId: USERS.jamie.id,
+        locationId: LOCATIONS.boulder.id,
+        date: '2026-06-20',
+      },
+    },
     update: {
-      locationId: LOCATIONS.boulder.id,
       status: 'OFF',
       source: 'WORKER_REQUEST',
       sourceRefId: '00000000-0000-0000-0000-0000000000f2',
@@ -79,9 +86,14 @@ async function main() {
 
   // Lin: one INTEGRATION PRESENT record at Boulder on 2026-06-25.
   await prisma.attendanceRecord.upsert({
-    where: { workerId_date: { workerId: USERS.lin.id, date: '2026-06-25' } },
+    where: {
+      workerId_locationId_date: {
+        workerId: USERS.lin.id,
+        locationId: LOCATIONS.boulder.id,
+        date: '2026-06-25',
+      },
+    },
     update: {
-      locationId: LOCATIONS.boulder.id,
       status: 'PRESENT',
       source: 'INTEGRATION',
     },

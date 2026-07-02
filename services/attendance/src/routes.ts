@@ -1,11 +1,5 @@
 import { Router, type Request } from 'express';
-import {
-  Errors,
-  asyncH,
-  requireRole,
-  INTEGRATION_API_KEY,
-  LOCATION_LIST,
-} from '@wfms/shared';
+import { Errors, asyncH, requireRole, INTEGRATION_API_KEY } from '@wfms/shared';
 import { prisma } from './prisma';
 import { orgGet, orgPost, identityGet, serviceAuth } from './clients';
 
@@ -127,10 +121,11 @@ router.post(
       throw Errors.invalidState('Self check-in is disabled at this location');
     }
 
-    // Invariant #3: only one active PENDING request per (workerId,date).
+    // Invariant #3: only one active PENDING request per (workerId,locationId,date),
+    // scoped per location to match per-location attendance (invariant #2).
     // Terminal-state rows (APPROVED/REJECTED/CANCELLED) do not block (ADR-0012).
     const existingPending = await prisma.attendanceRequest.findFirst({
-      where: { workerId, date, status: 'PENDING' },
+      where: { workerId, locationId, date, status: 'PENDING' },
     });
     if (existingPending) {
       throw Errors.conflict('A pending request already exists for this date');
@@ -203,7 +198,24 @@ router.post(
     const request = await prisma.attendanceRequest.findUnique({ where: { id: req.params.id } });
     if (!request) throw Errors.notFound('Request not found');
     if (request.workerId !== workerId) throw Errors.forbidden('Not your request');
-    if (request.status !== 'PENDING') throw Errors.invalidState('Only pending requests can be cancelled');
+    if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+      throw Errors.invalidState('Only pending or approved requests can be cancelled');
+    }
+
+    // Reversal (invariant #7 / ADR-0013): cancelling an already-APPROVED request
+    // releases the consumed OFF day and removes the attendance record it created.
+    if (request.status === 'APPROVED') {
+      if (request.kind === 'OFF') {
+        await orgPost(
+          `/locations/${request.locationId}/members/${request.workerId}/off-balance/release`,
+          {},
+          bearer(req),
+        );
+      }
+      await prisma.attendanceRecord.deleteMany({
+        where: { workerId, locationId: request.locationId, date: request.date, sourceRefId: request.id },
+      });
+    }
 
     const updated = await prisma.attendanceRequest.update({
       where: { id: request.id },
@@ -249,9 +261,14 @@ router.post(
         data: { status: 'APPROVED', decidedBy: req.auth!.userId, decidedAt: new Date() },
       }),
       prisma.attendanceRecord.upsert({
-        where: { workerId_date: { workerId: request.workerId, date: request.date } },
+        where: {
+          workerId_locationId_date: {
+            workerId: request.workerId,
+            locationId: request.locationId,
+            date: request.date,
+          },
+        },
         update: {
-          locationId: request.locationId,
           status: recordStatus,
           source: 'WORKER_REQUEST',
           sourceRefId: request.id,
@@ -328,8 +345,8 @@ router.post(
     }
 
     const record = await prisma.attendanceRecord.upsert({
-      where: { workerId_date: { workerId, date } },
-      update: { locationId, status, source: 'MANAGER', sourceRefId: null },
+      where: { workerId_locationId_date: { workerId, locationId, date } },
+      update: { status, source: 'MANAGER', sourceRefId: null },
       create: { workerId, locationId, date, status, source: 'MANAGER' },
     });
     res.json(toRecordJSON(record));
@@ -424,9 +441,20 @@ router.post(
       throw e;
     }
 
-    // Resolve location by externalRef from the shared seed map (allowed).
-    const location = LOCATION_LIST.find((l) => l.externalRef === locationExternalRef);
-    if (!location) throw Errors.validation(`Unknown location ref: ${locationExternalRef}`);
+    // Resolve location by externalRef via org-service (works for runtime-created
+    // locations too, not just seeded ones). Uses the internal service token.
+    let location: LocationDTO;
+    try {
+      location = await orgGet<LocationDTO>(
+        `/locations/by-ref/${encodeURIComponent(locationExternalRef)}`,
+        serviceAuth(),
+      );
+    } catch (e: unknown) {
+      if ((e as { code?: string })?.code === 'NOT_FOUND') {
+        throw Errors.validation(`Unknown location ref: ${locationExternalRef}`);
+      }
+      throw e;
+    }
 
     // Idempotent insert of the integration event. Duplicate key -> replay (200).
     try {
@@ -440,7 +468,7 @@ router.post(
     } catch (e: unknown) {
       if ((e as { code?: string })?.code === 'P2002') {
         const existing = await prisma.attendanceRecord.findUnique({
-          where: { workerId_date: { workerId: worker.id, date } },
+          where: { workerId_locationId_date: { workerId: worker.id, locationId: location.id, date } },
         });
         res.status(200).json({ recordId: existing?.id ?? null, workerId: worker.id, replay: true });
         return;
@@ -449,8 +477,8 @@ router.post(
     }
 
     const record = await prisma.attendanceRecord.upsert({
-      where: { workerId_date: { workerId: worker.id, date } },
-      update: { locationId: location.id, status, source: 'INTEGRATION', sourceRefId: null },
+      where: { workerId_locationId_date: { workerId: worker.id, locationId: location.id, date } },
+      update: { status, source: 'INTEGRATION', sourceRefId: null },
       create: { workerId: worker.id, locationId: location.id, date, status, source: 'INTEGRATION' },
     });
 
