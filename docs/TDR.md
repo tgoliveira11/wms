@@ -46,8 +46,8 @@ push notifications. These are called out in the roadmap (§13).
 1. A Location's feature flags gate which mutations are legal:
    - `selfCheckInEnabled = false` → Workers cannot submit `CHECK_IN_OUT` requests at that Location (an `OFF` request via worker balance may still be allowed — configurable, see ADR-0011).
    - `managerAttendanceMarkingEnabled = false` → Managers cannot directly mark attendance; attendance can only originate from approved requests or integrations.
-2. Exactly **one** Attendance Record per `(workerId, date)` — enforced with a DB unique constraint **and** an application-level upsert use case (never a blind insert). The record carries `locationId` as an attribute, but the uniqueness key is `(workerId, date)` **not** `(workerId, locationId, date)`: a worker has a single status per calendar day company-wide, even if they belong to multiple locations. This is a deliberate interpretation of the brief's "only one attendance record may exist per worker per date" over its "tracked per location" phrasing — documented here rather than left implicit.
-3. Exactly **one** *active* (`PENDING`) Attendance Request per `(workerId, date)`. A new request cannot be created while a `PENDING` request exists for that date; the worker must `CANCEL` first. Terminal-state rows (`CANCELLED`/`REJECTED`/`APPROVED`) are retained as immutable history and do not block a resubmission, which creates a **new** row with a new `id`. See ADR-0012 for why this "one active request" reading is chosen over a literal one-row-per-date reading.
+2. Exactly **one** Attendance Record per `(workerId, locationId, date)` — enforced with a DB unique constraint **and** an application-level upsert use case (never a blind insert). Uniqueness is scoped **per location** (matching the brief's "tracked per worker, per date, and per location"), so a multi-location worker can hold a distinct status at each location on the same day.
+3. Exactly **one** *active* (`PENDING`) Attendance Request per `(workerId, locationId, date)` — scoped per location to match invariant #2. A new request cannot be created while a `PENDING` request exists for that worker/location/date; the worker must `CANCEL` first. Terminal-state rows (`CANCELLED`/`REJECTED`/`APPROVED`) are retained as immutable history and do not block a resubmission, which creates a **new** row with a new `id`. See ADR-0012 for why this "one active request" reading is chosen over a literal one-row-per-date reading.
 4. `jobTitle` is unique within a Location (`(locationId, jobTitle)` unique constraint) — this is a **catalog of titles per location**, not a free-text field per worker, so it also protects against typos/duplicates.
 5. A Manager may only approve/reject requests for Locations in their `manager_location` membership set. Enforced in the domain (`ApproveAttendanceRequestUseCase`) via a `LocationScopeGuard`, independent of the transport-layer authorization.
 6. Approving a request is the **only** way a request mutates attendance. Approval is transactional: request status → `APPROVED` and the Attendance Record upsert happen in a single DB transaction (or, across service boundaries, via the Outbox pattern — see §7 and ADR-0007).
@@ -243,7 +243,7 @@ CREATE TABLE attendance_records (
   source_ref_id UUID,                   -- e.g. the approved request id, or integration event id
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (worker_id, date)              -- invariant #2
+  UNIQUE (worker_id, location_id, date)  -- invariant #2 (per-location)
 );
 
 CREATE TABLE attendance_requests (
@@ -257,7 +257,7 @@ CREATE TABLE attendance_requests (
   requested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   decided_by    UUID,                   -- manager user id
   decided_at    TIMESTAMPTZ,
-  UNIQUE (worker_id, date) WHERE (status = 'PENDING')   -- invariant #3, partial unique index
+  UNIQUE (worker_id, location_id, date) WHERE (status = 'PENDING')  -- invariant #3, partial unique index (per-location)
 );
 
 -- Idempotency ledger for third-party integrations (invariant #9 + at-least-once delivery safety)
@@ -282,10 +282,11 @@ CREATE TABLE outbox_events (
 
 **Key design notes**
 
-- The `UNIQUE (worker_id, date) WHERE (status = 'PENDING')` partial index enforces "only one
-  *pending* request per worker per date" while still allowing historical `REJECTED`/`CANCELLED`
-  (and `APPROVED`) rows to accumulate (audit trail) — a plain unique constraint would block that
-  history. Resubmitting after a terminal outcome inserts a new row with a new `id`; see ADR-0012.
+- The `UNIQUE (worker_id, location_id, date) WHERE (status = 'PENDING')` partial index enforces
+  "only one *pending* request per worker/location/date" while still allowing historical
+  `REJECTED`/`CANCELLED` (and `APPROVED`) rows to accumulate (audit trail) — a plain unique
+  constraint would block that history. Resubmitting after a terminal outcome inserts a new row with
+  a new `id`; see ADR-0012.
 - `attendance_records` never gets a hard delete; corrections are new rows with a full audit
   trail preserved in `attendance_requests`/`integration_events`.
 
@@ -444,10 +445,14 @@ Saga/choreography, full event bus) and why this shape was chosen.
 ```
 POST /integrations/attendance  (attendance-service, API-key authenticated, no user JWT)
   body: { externalWorkerId, locationExternalRef, date, status, idempotencyKey }
-  1. Resolve externalWorkerId → workerId via identity-svc (cached, short TTL)
-  2. INSERT INTO integration_events (idempotency_key UNIQUE) — reject duplicate deliveries
-  3. UPSERT attendance_records (source='INTEGRATION')
+  1. Resolve externalWorkerId → workerId via identity-svc (using an internal service token)
+  2. Resolve locationExternalRef → locationId via org-svc (GET /locations/by-ref/:ref)
+  3. INSERT INTO integration_events (idempotency_key UNIQUE) — reject duplicate deliveries
+  4. UPSERT attendance_records (source='INTEGRATION')
 ```
+
+Both cross-service lookups use a signed internal service token (the integration caller has no
+user JWT), so identity/org still re-verify a real signature rather than trusting the network.
 
 **Read-side consistency:** the gateway always reads location feature flags and membership live
 from org-service (small, low-latency, cacheable with a 5–10s TTL) rather than denormalizing them

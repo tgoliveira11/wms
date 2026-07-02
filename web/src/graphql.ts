@@ -27,6 +27,17 @@ export const ME = gql`
         selfCheckInEnabled
         managerAttendanceMarkingEnabled
       }
+      memberships {
+        id
+        role
+        jobTitle
+        annualOffAllowance
+        offBalanceRemaining
+        location {
+          id
+          name
+        }
+      }
     }
   }
 `;

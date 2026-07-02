@@ -6,10 +6,10 @@ export const typeDefs = /* GraphQL */ `
   enum RequestStatus { PENDING APPROVED REJECTED CANCELLED }
   enum RequestKind { CHECK_IN_OUT OFF }
 
-  type User { id: ID! externalId: String! displayName: String! role: Role! locations: [Location!]! }
+  type User { id: ID! externalId: String! displayName: String! role: Role! locations: [Location!]! memberships: [LocationMember!]! }
   type Location { id: ID! name: String! address: String selfCheckInEnabled: Boolean! managerAttendanceMarkingEnabled: Boolean!
     workerCount: Int! managerCount: Int! pendingApprovalCount: Int! members(role: Role): [LocationMember!]! }
-  type LocationMember { id: ID! user: User! role: Role! jobTitle: String annualOffAllowance: Int! offBalanceRemaining: Int! }
+  type LocationMember { id: ID! user: User! location: Location! role: Role! jobTitle: String annualOffAllowance: Int! offBalanceRemaining: Int! }
   type AttendanceRecord { id: ID! worker: User! location: Location! date: Date! status: AttendanceStatus! source: String! }
   type AttendanceRequest { id: ID! worker: User! location: Location! date: Date! kind: RequestKind! status: RequestStatus! note: String decidedBy: User }
   type AuthPayload { token: String! user: User! }

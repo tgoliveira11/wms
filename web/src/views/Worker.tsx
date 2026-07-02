@@ -15,10 +15,20 @@ interface LocationLite {
   managerAttendanceMarkingEnabled: boolean;
 }
 
+interface Membership {
+  id: string;
+  role: string;
+  jobTitle: string | null;
+  annualOffAllowance: number;
+  offBalanceRemaining: number;
+  location: { id: string; name: string };
+}
+
 interface Me {
   id: string;
   displayName: string;
   locations: LocationLite[];
+  memberships?: Membership[];
 }
 
 export default function Worker({ me }: { me: Me }) {
@@ -50,8 +60,29 @@ export default function Worker({ me }: { me: Me }) {
     }).catch(() => {});
   };
 
+  const workerMemberships = (me.memberships ?? []).filter((m) => m.role === "WORKER");
+
   return (
     <main>
+      <section>
+        <h2>OFF-day balance</h2>
+        {workerMemberships.length === 0 && (
+          <p className="muted">No worker memberships.</p>
+        )}
+        <ul>
+          {workerMemberships.map((m) => (
+            <li key={m.id}>
+              <strong>{m.location.name}</strong>
+              {m.jobTitle ? ` — ${m.jobTitle}` : ""} :{" "}
+              <strong>
+                {m.offBalanceRemaining} of {m.annualOffAllowance}
+              </strong>{" "}
+              OFF days remaining
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <section>
         <h2>Submit Attendance Request</h2>
         {locations.length === 0 && (
