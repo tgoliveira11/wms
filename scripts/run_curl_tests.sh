@@ -172,7 +172,11 @@ R=$(gql "$MANAGER_TOKEN" "$REQ")
 ok "T-BAL-01" "balance exposes allowance & remaining" "$(jq '[.data.location.members[0]|has("annualOffAllowance"),has("offBalanceRemaining")]|all' <<<"$R")" "true"
 TOM_REMAINING=$(jqr "$R" ".data.location.members[]|select(.user.id==\"$TOM_USER_ID\")|.offBalanceRemaining")
 ok "T-BAL-02" "Tom's balance decremented by the T-APR-01 OFF approval" "$TOM_REMAINING" "11"
-skip "T-BAL-03" "zero-balance rejection — run against a driven-to-zero fixture"
+# Jamie is seeded with 0 OFF days at Wembley -> approving an OFF there is rejected (invariant #7).
+mk --arg loc "$WEMBLEY_ID" '{query:"mutation($loc:ID!,$d:Date!){ createAttendanceRequest(locationId:$loc,date:$d,kind:OFF){ id } }",variables:{loc:$loc,d:"2026-09-10"}}'
+ZERO_REQ_ID=$(jqr "$(gql "$JAMIE_TOKEN" "$REQ")" '.data.createAttendanceRequest.id')
+mk --arg id "$ZERO_REQ_ID" '{query:"mutation($id:ID!){ approveAttendanceRequest(id:$id){ status } }",variables:{id:$id}}'
+ok "T-BAL-03" "approve OFF at zero balance rejected (#7)" "$(code "$(gql "$ADMIN_TOKEN" "$REQ")")" "INVALID_STATE"
 
 ########################################################## 6. Attendance Record Invariant
 echo "6. Attendance Record Invariant (#2)"

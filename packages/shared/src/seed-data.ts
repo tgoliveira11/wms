@@ -61,6 +61,9 @@ export interface SeedMembership {
   role: Role;
   jobTitle: string | null;
   annualOffAllowance: number;
+  // Optional starting remaining balance; defaults to annualOffAllowance when omitted.
+  // Used to seed a zero-balance member for the "cannot go negative" acceptance test.
+  offBalanceRemaining?: number;
 }
 
 const ALLOWANCE = 12;
@@ -72,7 +75,9 @@ export const MEMBERSHIPS: SeedMembership[] = [
   { locationId: LOCATIONS.boulder.id, userId: USERS.lin.id, role: 'WORKER', jobTitle: 'Cook', annualOffAllowance: ALLOWANCE },
   { locationId: LOCATIONS.nrg.id, userId: USERS.priya.id, role: 'MANAGER', jobTitle: null, annualOffAllowance: ALLOWANCE },
   { locationId: LOCATIONS.nrg.id, userId: USERS.lin.id, role: 'WORKER', jobTitle: 'Cook', annualOffAllowance: ALLOWANCE },
-  { locationId: LOCATIONS.wembley.id, userId: USERS.jamie.id, role: 'WORKER', jobTitle: 'Usher', annualOffAllowance: ALLOWANCE },
+  // Jamie at Wembley starts with 0 OFF days remaining — fixture for T-BAL-03
+  // (approving an OFF request at 0 balance must be rejected, invariant #7).
+  { locationId: LOCATIONS.wembley.id, userId: USERS.jamie.id, role: 'WORKER', jobTitle: 'Usher', annualOffAllowance: ALLOWANCE, offBalanceRemaining: 0 },
 ];
 
 export const LOCATION_LIST = Object.values(LOCATIONS);

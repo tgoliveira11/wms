@@ -51,9 +51,8 @@ Location flags: Boulder `selfCheckIn=on, managerMark=on` · NRG `selfCheckIn=off
 pnpm test:curl               # runs scripts/run_curl_tests.sh against the running stack
 ```
 
-**Latest run (2026-07-02, `main`): ✅ 54 passed · 0 failed · 1 skipped** (55 assertions).
+**Latest run (2026-07-02, `main`): ✅ 55 passed · 0 failed · 0 skipped.**
 
-The one skip (`T-BAL-03`) is the zero-balance rejection, which needs a driven-to-zero fixture.
 Coverage spans authentication, the two feature-flag semantics, the request lifecycle + history,
 manager approval with location scoping, per-location attendance, atomic OFF-balance decrement and
 reversal, worker balance visibility, idempotent third-party integration, the full RBAC
@@ -81,7 +80,7 @@ and partly not implemented). This keeps "done" honest.
 
 Every requirement in the brief is implemented and demonstrated. Each is mapped to its
 design + test in [`docs/REQUIREMENTS_TRACEABILITY.md`](docs/REQUIREMENTS_TRACEABILITY.md) and
-proven by the acceptance suite `scripts/run_curl_tests.sh` (**54 pass / 0 fail / 1 skip**):
+proven by the acceptance suite `scripts/run_curl_tests.sh` (**55 pass / 0 fail / 0 skip**):
 
 - Multiple backend **microservices** + a single **GraphQL gateway** + a **React + TypeScript** frontend that talks *only* to the gateway.
 - Single **company**, multiple **locations**, all permissions/ownership **scoped per location**.

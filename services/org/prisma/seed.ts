@@ -28,14 +28,15 @@ async function main() {
   }
 
   for (const m of MEMBERSHIPS) {
-    // offBalanceRemaining starts equal to annualOffAllowance.
+    // offBalanceRemaining defaults to annualOffAllowance unless the seed overrides it.
+    const remaining = m.offBalanceRemaining ?? m.annualOffAllowance;
     await prisma.locationMember.upsert({
       where: { locationId_userId: { locationId: m.locationId, userId: m.userId } },
       update: {
         role: m.role,
         jobTitle: m.jobTitle,
         annualOffAllowance: m.annualOffAllowance,
-        offBalanceRemaining: m.annualOffAllowance,
+        offBalanceRemaining: remaining,
       },
       create: {
         locationId: m.locationId,
@@ -43,7 +44,7 @@ async function main() {
         role: m.role,
         jobTitle: m.jobTitle,
         annualOffAllowance: m.annualOffAllowance,
-        offBalanceRemaining: m.annualOffAllowance,
+        offBalanceRemaining: remaining,
       },
     });
   }
