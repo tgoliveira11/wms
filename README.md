@@ -18,11 +18,15 @@ web (React/Apollo :5173) ──GraphQL──> gateway (:4000) ──REST──> 
 ## Run it (warm machine ≈ a few minutes)
 ```bash
 pnpm install                 # installs all workspaces
+# Create each service's .env from the committed examples (dev-only localhost creds):
+for s in identity org attendance; do cp services/$s/.env.example services/$s/.env; done
 docker compose up -d         # Postgres with identity_db / org_db / attendance_db
 pnpm db:push                 # create tables in each service DB (prisma db push)
 pnpm seed                    # seed personas, locations, memberships, demo attendance
 pnpm dev                     # runs all 3 services + gateway + web concurrently
 ```
+> If port 5432 is taken on your machine, edit the host port in `docker-compose.yml` and the
+> matching `services/*/.env` (this repo ships with `5439` for that reason).
 Then open:
 - Frontend: http://localhost:5173  (use the **persona switcher** top-right to log in as any seed user)
 - GraphQL sandbox: http://localhost:4000
